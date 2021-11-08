@@ -1,7 +1,13 @@
 # from transformers import Trainer
 import torch
 from transformers import PreTrainedModel, GPT2PreTrainedModel, GPT2Tokenizer, PretrainedBartModel
-from torch import  nn
+from torch import nn
+
+## add low data setting , write by Andrew Zeng, start it
+from transformers import MBartTokenizer, T5ForConditionalGeneration
+from transformers.modeling_bart import shift_tokens_right
+## add low data setting , write by Andrew Zeng, end it
+
 
 
 class PrefixTuning(PretrainedBartModel):
@@ -182,18 +188,20 @@ class PrefixTuning(PretrainedBartModel):
                     sample_input = ' {} {} '.format(src, tokenizer.bos_token) + tgt + ' {}'.format(tokenizer.eos_token)
 
                 elif low_data_init == 3:
+                    tokenizer = GPT2Tokenizer.from_pretrained('gpt2-medium')
+                    input_ids = tokenizer(self.lowdata_token, return_tensors='pt')["input_ids"]
                     # use a single prepended token.
                     assert self.lowdata_token is not None
                     self.preseqlen = len(self.lowdata_token[0])
                     print('IN THE LOW DATA SETTING, UNDER PARAMETRIZATION 1, low_data_init=3, '
                           'preseqlen = {} Unifying with FINETUNE'.format(self.preseqlen))
                     self.input_tokens = torch.arange(self.preseqlen).long()
-                    self.wte = nn.Embedding(self.preseqlen, config.n_embd)
+                    self.wte = nn.Embedding(self.preseqlen, self.n_embd)
                     self.control_trans = nn.Sequential(
-                        nn.Linear(config.n_embd, self.mid_dim),
+                        nn.Linear(self.n_embd, self.mid_dim),
                         nn.Tanh(),
-                        nn.Linear(self.mid_dim, config.n_layer * 2 * config.n_embd))
-                    self.get_prompt = self.get_prompt_p5
+                        nn.Linear(self.mid_dim, self.match_n_layer * 2 * self.n_embd))
+                    self.get_prompt = self.get_prompt_domain
 
 
 
@@ -293,9 +301,9 @@ class PrefixTuning(PretrainedBartModel):
         if low_data_init == 2:
             self.lowdata_init_train2(gpt2=model_gpt2, tokenizer=tokenizer, sample_input=sample_input)
         elif low_data_init == 3:
-            print('use pt for this tensor', torch.LongTensor(self.lowdata_token))
-            self.lowdata_init_train3(gpt2=model_gpt2, sample_input=torch.LongTensor(self.lowdata_token))
-
+            print('use pt for this tensor', self.lowdata_token)
+            #self.lowdata_init_train3(gpt2=model_gpt2, sample_input=torch.LongTensor(self.lowdata_token))
+            self.init_domain_train(gpt2=model_gpt2, domain_word=self.lowdata_token)
 
 
     def lowdata_init_train1(self, gpt2, tokenizer, sample_input):
@@ -330,6 +338,51 @@ class PrefixTuning(PretrainedBartModel):
             loss = loss_metrics(our_prompt.to(gpt2.device), output)
             print(loss)
             loss.backward()
+            optimizer_temp.step()
+            self.control_trans.zero_grad()
+
+        return
+
+    def init_domain_train(self, gpt2, domain_word, epochs=500): # prev=500
+        self = self.cuda()
+        gpt2 = gpt2.cuda()
+        tokenizer = GPT2Tokenizer.from_pretrained('gpt2-medium')
+        self.input_tokenize = tokenizer(self.lowdata_token, return_tensors='pt')
+        pad_token_id = tokenizer.convert_tokens_to_ids("<pad>")
+
+        input_ids = self.input_tokenize['input_ids']
+
+        if isinstance(self, T5ForConditionalGeneration):
+            decoder_input_ids = self.model._shift_right(input_ids)
+        else:
+            decoder_input_ids = shift_tokens_right(input_ids, pad_token_id)
+        with torch.no_grad():
+            output = gpt2(input_ids.to(gpt2.device), decoder_input_ids=decoder_input_ids.to(gpt2.device), use_cache=True,
+                          return_dict=True)
+            output = output.past_key_values
+            output_list = []
+            for item in output:
+                output_list.append(item['self']['prev_key'])
+                output_list.append(item['self']['prev_value'])
+            output = torch.cat(output_list, dim=0)
+
+
+        optimizer_temp = torch.optim.Adam(self.control_trans.parameters(), lr=0.0001)
+
+        for e in range(epochs):
+            our_prompt_list = []
+            our_prompt = self.get_prompt_domain(bsz=1)
+            for item in our_prompt:
+                our_prompt_list.append(item['self']['prev_key'])
+                our_prompt_list.append(item['self']['prev_value'])
+
+            our_prompt = torch.cat(our_prompt_list, dim=0)
+
+            loss_metrics = nn.MSELoss()
+            loss = loss_metrics(our_prompt.to(gpt2.device), output)
+
+            loss.backward()
+
             optimizer_temp.step()
             self.control_trans.zero_grad()
 
@@ -408,6 +461,27 @@ class PrefixTuning(PretrainedBartModel):
             assert False, "control_code is None"
         return past_key_values
 
+    def get_prompt_domain(self, control_code=None, gpt2=None, bsz=None, sample_size=1):
+        old_bsz = bsz
+        bsz = bsz * sample_size
+        input_tokens = self.input_tokens.unsqueeze(0).expand(bsz, -1).to(self.device)
+        temp_control = self.wte(input_tokens)
+        past_key_values = self.control_trans(temp_control)  # bsz, seqlen, layer*emb
+        bsz, seqlen, _ = past_key_values.shape
+        past_key_values = past_key_values.view(bsz, seqlen, self.match_n_layer * 2, self.match_n_head,
+                                               self.match_n_embd)
+        past_key_values = self.dropout(past_key_values)
+        past_key_values = past_key_values.permute([2, 0, 3, 1, 4]).split(2)
+        result = []
+        for i, key_val in enumerate(past_key_values):
+            temp_dict = {'self': {"prev_key": key_val[0].contiguous(),
+                                  "prev_value": key_val[1].contiguous(),
+                                  "prev_key_padding_mask": torch.zeros(bsz, seqlen).to(key_val.device).bool()
+                                  # bsz, preseqlen
+                                  },
+                         }
+            result.append(temp_dict)
+        return result
 
     def get_prompt_p5(self, control_code=None, gpt2=None, bsz=None, sample_size=1):
         old_bsz = bsz

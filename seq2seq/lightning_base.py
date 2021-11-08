@@ -181,6 +181,15 @@ class PrefixTransformer(pl.LightningModule):
         # some extra stuff.
         config_prefix.mid_dim = self.hparams.mid_dim
 
+        # add low data setting , write by Andrew Zeng, start it
+
+        config_prefix.lowdata = self.hparams.use_lowdata_token
+
+        config_prefix.lowdata_token = self.hparams.lowdata_token
+
+        # add low data setting , write by Andrew Zeng, end it
+
+
         # print(config_prefix)
 
         if self.hparams.prefixModel_name_or_path is not None:

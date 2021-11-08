@@ -7,6 +7,7 @@ if not sys.warnoptions:
     warnings.simplefilter("ignore")
 
 if __name__ == '__main__':
+    os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
     parser = argparse.ArgumentParser(description='data2text E2E training args.')
     parser.add_argument('--mode', type=str, default='data2text', help='')
@@ -18,8 +19,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--dir_name', type=str, default=None, help='')
     parser.add_argument('--notes', type=str, default=None, help='')
-    parser.add_argument('--lowdata_token', type=str, default='summarize', help='')
-    parser.add_argument('--use_lowdata_token', type=str, default='yes', help='')
+    parser.add_argument('--lowdata_token', type=str, default='summarize', help='choose whether to use token')
+    parser.add_argument('--use_lowdata_token', type=str, default='yes', help='the token you want to use')
 
 
     parser.add_argument('--parametrize_emb', type=str, default='MLP', help='')
@@ -114,8 +115,8 @@ if __name__ == '__main__':
 
 
     elif args.mode == 'xsum':
-        data_dir = 'xsum'
-        folder_name = "xsum_models/"
+        data_dir = '/home/disk2/zfj2020/zwh/multiwoz_transfer_dataset/train_as_test_new_oracle'
+        folder_name = "/home/disk2/zfj2020/zwh/transfer_domain/test_new/"
         max_source_length = 1024
         max_target_length = 60
         val_max_target_length = 60
@@ -260,8 +261,10 @@ if __name__ == '__main__':
                       '--learning_rate {} ' \
                       '--train_batch_size {} ' \
                       '--eval_batch_size {} ' \
-                      '--num_train_epochs {} '.format(OLD_MODEL, Model_FILE, data_dir, args.tuning_mode, args.preseqlen, args.label_smoothing, args.use_deep,
-                                                      args.learning_rate, args.bsz, args.bsz, args.epoch)
+                      '--num_train_epochs {} ' \
+                      '--use_lowdata_token {} ' \
+                      '--lowdata_token {} '.format(OLD_MODEL, Model_FILE, data_dir, args.tuning_mode, args.preseqlen, args.label_smoothing, args.use_deep,
+                                                      args.learning_rate, args.bsz, args.bsz, args.epoch, args.use_lowdata_token, args.lowdata_token)
     else:
         if args.tuning_mode == 'finetune':
             assert args.finetune_model_path is not None
@@ -303,9 +306,11 @@ if __name__ == '__main__':
                           '--eval_batch_size {} ' \
                           '--seed {} ' \
                           '--length_penalty {} ' \
-                          '--num_train_epochs {} '.format(OLD_MODEL, args.prefix_model_path, Model_FILE, data_dir,
+                          '--num_train_epochs {} ' \
+                          '--use_lowdata_token {} ' \
+                          '--lowdata_token {} '.format(OLD_MODEL, args.prefix_model_path, Model_FILE, data_dir,
                                                           args.tuning_mode, args.preseqlen, args.use_deep,
-                                                          8, 8, args.seed, args.length_pen, args.epoch)
+                                                          8, 8, args.seed, args.length_pen, args.epoch, args.use_lowdata_token, args.lowdata_token)
 
 
     # COMMANDLINE="python run_language_modeling.py \

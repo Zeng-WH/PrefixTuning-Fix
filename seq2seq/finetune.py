@@ -61,7 +61,7 @@ class PrefixSummarizationModule(PrefixTransformer):
                 raise ValueError("--sortish_sampler and --max_tokens_per_batch may not be used simultaneously")
         super().__init__(hparams, num_labels=None, mode=self.mode, **kwargs)
         use_task_specific_params(self.model, "summarization")
-        save_git_info(self.hparams.output_dir)
+        #save_git_info(self.hparams.output_dir)
         self.metrics_save_path = Path(self.output_dir) / "metrics.json"
         self.hparams_save_path = Path(self.output_dir) / "hparams.pkl"
         pickle_save(self.hparams, self.hparams_save_path)
@@ -99,7 +99,7 @@ class PrefixSummarizationModule(PrefixTransformer):
         #     freeze_params(self.model.get_encoder())
         #     assert_all_frozen(self.model.get_encoder())
 
-        self.hparams.git_sha = get_git_info()["repo_sha"]
+        #self.hparams.git_sha = get_git_info()["repo_sha"]
         self.num_workers = hparams.num_workers
         self.decoder_start_token_id = None  # default to config
         if self.model.config.decoder_start_token_id is None and isinstance(self.tokenizer, MBartTokenizer):
@@ -395,6 +395,8 @@ class PrefixSummarizationModule(PrefixTransformer):
             required=False,
             help="-1 means never early stop. early_stopping_patience is measured in validation checks, not epochs. So val_check_interval will effect it.",
         )
+        parser.add_argument('--lowdata_token', type=str, default='summarize', help='choose whether to use token')
+        parser.add_argument('--use_lowdata_token', type=str, default='yes', help='the token you want to use')
         return parser
 
 
@@ -414,7 +416,7 @@ class SummarizationModule(BaseTransformer):
                 raise ValueError("--sortish_sampler and --max_tokens_per_batch may not be used simultaneously")
         super().__init__(hparams, num_labels=None, mode=self.mode, **kwargs)
         use_task_specific_params(self.model, "summarization")
-        save_git_info(self.hparams.output_dir)
+        #save_git_info(self.hparams.output_dir)
         self.metrics_save_path = Path(self.output_dir) / "metrics.json"
         self.hparams_save_path = Path(self.output_dir) / "hparams.pkl"
         pickle_save(self.hparams, self.hparams_save_path)
@@ -452,7 +454,7 @@ class SummarizationModule(BaseTransformer):
         else:
             print('THE ENCODER IS NOT FROZEN.')
 
-        self.hparams.git_sha = get_git_info()["repo_sha"]
+        #self.hparams.git_sha = get_git_info()["repo_sha"]
         self.num_workers = hparams.num_workers
         self.decoder_start_token_id = None  # default to config
         if self.model.config.decoder_start_token_id is None and isinstance(self.tokenizer, MBartTokenizer):
